@@ -1,20 +1,25 @@
 # -*- encoding: utf-8 -*-
 """
-KARA
-kara.core.handling module
+KASSH
+kassh.core.handling module
 
 EXN Message handling
 """
 import datetime
-import json
-from urllib import parse
+import os
+import pwd
+import stat
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from hio.base import doing
-from hio.core import http
-from hio.help import decking, Hict
+from hio.help import decking
+from keri.app import agenting
 from keri.core import coring
-from keri.end import ending
 from keri.help import helping
+
+AUTH_SCHEMA_SAID = "EKgMCHV98k4xz2rJnt2x556pGBCUfA6n5x03mvQv5tPo"
 
 
 def loadHandlers(hby, cdb, exc):
@@ -85,6 +90,8 @@ class PresentationProofHandler(doing.Doer):
                 sender = payload["i"]
                 said = payload["a"] if "a" in payload else payload["n"]
 
+                print(f"Credential {said} presented from {sender}")
+
                 prefixer = coring.Prefixer(qb64=sender)
                 saider = coring.Saider(qb64=said)
                 now = coring.Dater()
@@ -97,18 +104,18 @@ class PresentationProofHandler(doing.Doer):
             yield self.tock
 
 
-class Communicator(doing.DoDoer):
+class Authorizer(doing.DoDoer):
     """
-    Communicator is responsible for comminucating the receipt and successful verification
+    Authorizer is responsible for comminucating the receipt and successful verification
     of credential presentation and revocation messages from external third parties via
     web hook API calls.
 
 
     """
 
-    TimeoutComms = 600
+    TimeoutAuth = 600
 
-    def __init__(self, hby, hab, cdb, reger, hook):
+    def __init__(self, hby, hab, cdb, reger):
         """
 
         Create a communicator capable of persistent processing of messages and performing
@@ -116,35 +123,71 @@ class Communicator(doing.DoDoer):
 
         Parameters:
             hby (Habery): identifier database environment
-            hab (Hab): identifier environment of this Communicator.  Used to sign hook calls
+            hab (Hab): identifier environment of this Authorizer.  Used to sign hook calls
             cdb (CueBaser): communication escrow database environment
             reger (Reger): credential registry and database
-            hook (str): web hook to call in response to presentations and revocations
 
         """
         self.hby = hby
         self.hab = hab
         self.cdb = cdb
         self.reger = reger
-        self.hook = hook
+        self.witq = agenting.WitnessInquisitor(hby=hby)
+
         self.clients = dict()
 
-        super(Communicator, self).__init__(doers=[doing.doify(self.escrowDo)])
+        super(Authorizer, self).__init__(doers=[self.witq, doing.doify(self.escrowDo), doing.doify(self.monitorDo)])
 
     def processPresentations(self):
 
         for (said,), dater in self.cdb.iss.getItemIter():
-
             # cancel presentations that have been around longer than timeout
             now = helping.nowUTC()
-            if now - dater.datetime > datetime.timedelta(seconds=self.TimeoutComms):
+            if now - dater.datetime > datetime.timedelta(seconds=self.TimeoutAuth):
                 self.cdb.iss.rem(keys=(said,))
+                print(f"removing {said}, it expired")
                 continue
 
             if self.reger.saved.get(keys=(said,)) is not None:
-                creder = self.reger.creds.get(keys=(said,))
                 self.cdb.iss.rem(keys=(said,))
-                self.cdb.recv.pin(keys=(said, dater.qb64), val=creder)
+                creder = self.reger.creds.get(keys=(said,))
+                if creder.schema != AUTH_SCHEMA_SAID:
+                    print(f"invalid credential presentation, schema {creder.schema} does not match {AUTH_SCHEMA_SAID}")
+
+                kever = self.hby.kevers[creder.subject["i"]]
+
+                user = creder.subject["userName"]
+                homeDir = os.path.join("/home", user)
+                if os.path.exists(homeDir):
+                    print(f"not creating user, {user} already exists.")
+
+                cmd = f"useradd -p xxx -m {user}"
+                if (err := os.system(cmd)) != 0:
+                    print(f"unable to create user: {err}.")
+
+                try:
+                    ssh = os.path.join(homeDir, ".ssh")
+                    os.mkdir(ssh)
+                    authKeys = os.path.join(ssh, "authorized_keys")
+                    f = open(authKeys, "w")
+                    verkey = ed25519.Ed25519PublicKey.from_public_bytes(kever.verfers[0].raw)
+                    pem = verkey.public_bytes(encoding=serialization.Encoding.OpenSSH,
+                                              format=serialization.PublicFormat.OpenSSH)
+
+                    for line in pem.splitlines(keepends=True):
+                        f.write(line.decode("utf-8"))
+
+                    f.close()
+                    uid, gid = pwd.getpwnam(user).pw_uid, pwd.getpwnam(user).pw_gid
+                    os.chown(ssh, uid, gid)
+                    os.chown(authKeys, uid, gid)
+                    os.chmod(ssh, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+                    os.chmod(authKeys, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+
+                    self.cdb.accts.pin(keys=(creder.said,), val=(kever.prefixer, kever.sner))
+
+                except (FileExistsError, FileNotFoundError) as e:
+                    print(f"error creating SSH directory and files: {e}")
 
     def processRevocations(self):
 
@@ -152,7 +195,7 @@ class Communicator(doing.DoDoer):
 
             # cancel revocations that have been around longer than timeout
             now = helping.nowUTC()
-            if now - dater.datetime > datetime.timedelta(seconds=self.TimeoutComms):
+            if now - dater.datetime > datetime.timedelta(seconds=self.TimeoutAuth):
                 self.cdb.rev.rem(keys=(said,))
                 continue
 
@@ -171,38 +214,6 @@ class Communicator(doing.DoDoer):
             elif state.ked['et'] in (coring.Ilks.rev, coring.Ilks.brv):  # revoked
                 self.cdb.rev.rem(keys=(said,))
                 self.cdb.revk.pin(keys=(said, dater.qb64), val=creder)
-
-    def processReceived(self, db, action):
-
-        for (said, dates), creder in db.getItemIter():
-            if said not in self.clients:
-                resource = creder.schema
-                actor = creder.issuer
-                # TODO: include revocation date with payload for revocation
-                self.request(creder.said, resource, action, actor, creder.crd)
-                continue
-
-            (client, clientDoer) = self.clients[said]
-            if client.responses:
-                response = client.responses.popleft()
-                self.remove([clientDoer])
-                client.close()
-                del self.clients[said]
-
-                if response["status"] == 200:
-                    db.rem(keys=(said, dates))
-                    self.cdb.ack.pin(keys=(said,), val=creder)
-                else:
-                    dater = coring.Dater(qb64=dates)
-                    now = helping.nowUTC()
-                    if now - dater.datetime > datetime.timedelta(seconds=self.TimeoutComms):
-                        db.rem(keys=(said, dates))
-
-    def processAcks(self):
-        for (said, ), creder in self.cdb.ack.getItemIter():
-            # TODO: generate EXN ack message with credential information
-            print(f"ACK for credential {said} will be sent to {creder.issuer}")
-            self.cdb.ack.rem(keys=(said,))
 
     def escrowDo(self, tymth, tock=1.0):
         """ Process escrows of comms pipeline
@@ -234,64 +245,50 @@ class Communicator(doing.DoDoer):
 
             yield 0.5
 
+    def monitorDo(self, tymth, tock=1.0):
+        """ Process active account AIDs to update on rotations
+
+        Parameters:
+            tymth (function): injected function wrapper closure returned by .tymen() of
+                Tymist instance. Calling tymth() returns associated Tymist .tyme.
+            tock (float): injected initial tock value.  Default to 1.0 to slow down processing
+
+        """
+        # enter context
+        self.wind(tymth)
+        self.tock = tock
+        _ = (yield self.tock)
+
+        while True:
+            for (said,), (prefixer, seqner) in self.cdb.accts.getItemIter():
+                self.witq.query(src=self.hab.pre, pre=prefixer.qb64)
+
+                kever = self.hby.kevers[prefixer.qb64]
+                if kever.sner.num > seqner.num:
+                    print("Processing rotation...")
+                    creder = self.reger.creds.get(keys=(said,))
+                    user = creder.subject["userName"]
+                    authKeys = os.path.join("/home", user, ".ssh", "authorized_keys")
+                    f = open(authKeys, "w")
+                    verkey = ed25519.Ed25519PublicKey.from_public_bytes(kever.verfers[0].raw)
+                    pem = verkey.public_bytes(encoding=serialization.Encoding.OpenSSH,
+                                              format=serialization.PublicFormat.OpenSSH)
+
+                    for line in pem.splitlines(keepends=True):
+                        f.write(line.decode("utf-8"))
+
+                    f.close()
+                    print(f"new key written to {authKeys}")
+
+                    self.cdb.accts.pin(keys=(creder.said,), val=(kever.prefixer, kever.sner))
+                yield 1.0
+
+            yield 15.0
+
     def processEscrows(self):
         """
-        Process communication pipelines
+        Process credental presentation pipelines
 
         """
         self.processPresentations()
         self.processRevocations()
-        self.processReceived(db=self.cdb.recv, action="iss")
-        self.processReceived(db=self.cdb.revk, action="rev")
-        self.processAcks()
-
-    def request(self, said, resource, action, actor, data):
-        """ Generate and launch request to remote hook
-
-        Parameters:
-            said (str): qb64 SAID of credential
-            data (dict): serializable body to send with call
-            action (str): the action performed on he resource [iss|rev]
-            actor (str): qualified b64 AID of sender of the event
-            resource (str): the resource type that triggered the event
-
-        """
-        purl = parse.urlparse(self.hook)
-        client = http.clienting.Client(hostname=purl.hostname, port=purl.port)
-        clientDoer = http.clienting.ClientDoer(client=client)
-        self.extend([clientDoer])
-
-        body = dict(
-            action=action,
-            actor=actor,
-            data=data
-        )
-
-        raw = json.dumps(body).encode("utf-8")
-        sigers = self.hab.sign(ser=raw,
-                               verfers=self.hab.kever.verfers,
-                               indexed=True)
-
-        signage = ending.Signage(markers=sigers, indexed=True, signer=None, ordinal=None, digest=None,
-                                 kind=None)
-
-        headers = Hict([
-            ("Content-Type", "application/json"),
-            ("Content-Length", len(raw)),
-            ("Connection", "close"),
-            ("Sally-Resource", resource),
-            ("Sally-Timestamp", helping.nowIso8601()),
-        ])
-
-        headers.extend(ending.signature([signage]))
-
-        path = purl.path or "/"
-        client.request(
-            method='POST',
-            path=path,
-            qargs=parse.parse_qs(purl.query),
-            headers=headers,
-            body=raw
-        )
-
-        self.clients[said] = (client, clientDoer)

@@ -1,7 +1,7 @@
 # -*- encoding: utf-8 -*-
 """
-KARA
-kara.core.basing module
+KASSH
+kassh.core.basing module
 
 Database support
 """
@@ -16,9 +16,9 @@ class CueBaser(dbing.LMDBer):
     intended to be read and dismissed by the controller of the agent.
 
     """
-    TailDirPath = "kara/db"
-    AltTailDirPath = ".kara/db"
-    TempPrefix = "kara_db_"
+    TailDirPath = "kassh/db"
+    AltTailDirPath = ".kassh/db"
+    TempPrefix = "kassh_db_"
 
     def __init__(self, name="cb", headDirPath=None, reopen=True, **kwa):
         """
@@ -34,7 +34,7 @@ class CueBaser(dbing.LMDBer):
         self.iss = None
         self.rev = None
 
-        self.recv = None
+        self.accts = None
         self.revk = None
 
         self.ack = None
@@ -58,11 +58,6 @@ class CueBaser(dbing.LMDBer):
         self.rev = subing.CesrSuber(db=self, subkey='rev.', klas=coring.Dater)
 
         # presentations with resolved credentials that need to be sent to the hook
-        self.recv = proving.CrederSuber(db=self, subkey='recv')
-        # revocations whose TEL rev event has been resolved that need to be sent to the hook
-        self.revk = proving.CrederSuber(db=self, subkey='revk')
-
-        # presentations that have been sent to the hook that need to be ack'ed
-        self.ack = proving.CrederSuber(db=self, subkey='ack')
+        self.accts = subing.CatCesrSuber(db=self, subkey='accts', klas=(coring.Prefixer, coring.Number))
 
         return self.env

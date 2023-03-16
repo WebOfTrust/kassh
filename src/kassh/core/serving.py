@@ -1,7 +1,7 @@
 # -*- encoding: utf-8 -*-
 """
-KARA
-kara.core.serving module
+KASSH
+kassh.core.serving module
 
 Endpoint service
 """
@@ -16,20 +16,18 @@ from keri.peer import exchanging
 from keri.vdr import viring, verifying
 from keri.vdr.eventing import Tevery
 
-from kara.core import handling, basing
+from kassh.core import handling, basing
 
 logger = help.ogler.getLogger()
 
 
-def setup(hby, *, alias, httpPort, hook, listen=False):
+def setup(hby, *, alias, httpPort):
     """ Setup serving package and endpoints
 
     Parameters:
         hby (Habery): identifier database environment
         alias (str): alias of the identifier representing this agent
         httpPort (int): external port to listen on for HTTP messages
-        hook (str): URL of external web hook to notify of credential issuance and revocations
-        listen (bool): flag indicating whether the agent listens persistently or polls mailboxes
 
     """
     # make hab
@@ -43,11 +41,11 @@ def setup(hby, *, alias, httpPort, hook, listen=False):
     rep = storing.Respondant(hby=hby, mbx=mbx)
     verifier = verifying.Verifier(hby=hby, reger=reger)
     cdb = basing.CueBaser(name=hby.name)
-    comms = handling.Communicator(hby=hby, hab=hab, cdb=cdb, reger=reger, hook=hook)
+    auther = handling.Authorizer(hby=hby, hab=hab, cdb=cdb, reger=reger)
 
     rvy = routing.Revery(db=hby.db)
 
-    exc = exchanging.Exchanger(hby=hby, handlers=[])
+    exc = exchanging.Exchanger(db=hby.db, handlers=[])
     handling.loadHandlers(exc=exc, hby=hby, cdb=cdb)
 
     kvy = eventing.Kevery(db=hby.db,
@@ -72,19 +70,16 @@ def setup(hby, *, alias, httpPort, hook, listen=False):
 
     ending.loadEnds(app, hby=hby, default=hab.pre)
 
-    doers = [httpServerDoer, comms, exc]
-    if listen:
-        print("This is where we start HttpEnd instead of MailboxDirector")
-    else:
-        mbd = indirecting.MailboxDirector(hby=hby,
-                                          exc=exc,
-                                          kvy=kvy,
-                                          tvy=tvy,
-                                          rvy=rvy,
-                                          verifier=verifier,
-                                          rep=rep,
-                                          topics=["/receipt", "/replay", "/multisig", "/credential", "/delegate",
-                                                  "/challenge"])
-        doers.append(mbd)
+    doers = [httpServerDoer, auther, exc]
+    mbd = indirecting.MailboxDirector(hby=hby,
+                                      exc=exc,
+                                      kvy=kvy,
+                                      tvy=tvy,
+                                      rvy=rvy,
+                                      verifier=verifier,
+                                      rep=rep,
+                                      topics=["/receipt", "/replay", "/multisig", "/credential", "/delegate",
+                                              "/challenge"])
+    doers.append(mbd)
 
     return doers

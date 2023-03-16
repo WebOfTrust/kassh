@@ -1,6 +1,6 @@
-# KARA
+# KASSH
 
-[![GitHub Actions](https://github.com/webOfTrust/kara/actions/workflows/test.yaml/badge.svg)](https://github.com/WebOfTrust/kara/actions)
-[![codecov](https://codecov.io/gh/WebOfTrust/kara/branch/dev/graph/badge.svg?token=VS7LFBXRP1)](https://codecov.io/gh/WebOfTrust/kara)
+[![GitHub Actions](https://github.com/pfeairheller/kassh/actions/workflows/test.yaml/badge.svg)](https://github.com/pfeairheller/kassh/actions)
+[![codecov](https://codecov.io/gh/pfeairheller/kassh/branch/dev/graph/badge.svg?token=VS7LFBXRP1)](https://codecov.io/gh/pfeairheller/kassh)
 
-KERI Audit Reporting Agent
+KERI Authorization for SSH

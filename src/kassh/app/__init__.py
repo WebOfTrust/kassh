@@ -2,6 +2,6 @@
 
 """
 KERI
-kara.app package
+kassh.app package
 
 """

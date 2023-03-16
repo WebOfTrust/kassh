@@ -1,17 +1,16 @@
 # -*- encoding: utf-8 -*-
 """
-kara.cli.commands module
+kassh.cli.commands module
 
 """
 import argparse
 
-from keri.app import keeping, habbing, directing, configing
+from keri.app import keeping, habbing, directing, configing, oobiing
 from keri.app.cli.common import existing
-from keri.end import ending
 
-from kara.core import serving
+from kassh.core import serving
 
-parser = argparse.ArgumentParser(description='Launch KARA micro-service')
+parser = argparse.ArgumentParser(description='Launch KASSH micro-service')
 parser.set_defaults(handler=lambda args: launch(args),
                     transferable=True)
 parser.add_argument('-p', '--http',
@@ -20,14 +19,8 @@ parser.add_argument('-p', '--http',
                     help="Port on which to listen for OOBI requests.  Defaults to 9723")
 parser.add_argument('-n', '--name',
                     action='store',
-                    default="kara",
-                    help="Name of controller. Default is kara.")
-parser.add_argument('-w', '--web-hook', help='Webhook address for outbound notifications of credential issuance or '
-                                             'revocation',
-                    action='store',
-                    required=True,
-                    default=None
-                    )
+                    default="kassh",
+                    help="Name of controller. Default is kassh.")
 parser.add_argument('--base', '-b', help='additional optional prefix to file location of KERI keystore',
                     required=False, default="")
 parser.add_argument('--alias', '-a', help='human readable alias for the new identifier prefix', required=True)
@@ -39,17 +32,13 @@ parser.add_argument('--config-file',
                     action='store',
                     default=None,
                     help="configuration filename override")
-parser.add_argument('--listen', '-l', help='run KARA in direct HTTP mode listening for events', action="store_true")
 
 
 def launch(args, expire=0.0):
-    hook = args.web_hook
     name = args.name
     base = args.base
     bran = args.bran
     httpPort = args.http
-
-    listen = args.listen
 
     alias = args.alias
     configFile = args.configFile
@@ -77,11 +66,11 @@ def launch(args, expire=0.0):
         hby = existing.setupHby(name=name, base=base, bran=bran)
 
     hbyDoer = habbing.HaberyDoer(habery=hby)  # setup doer
-    obl = ending.Oobiery(hby=hby)
+    obl = oobiing.Oobiery(hby=hby)
 
-    doers = [hbyDoer, obl]
+    doers = [hbyDoer, *obl.doers]
 
-    doers += serving.setup(hby, alias=alias, httpPort=httpPort, hook=hook, listen=listen)
+    doers += serving.setup(hby, alias=alias, httpPort=httpPort)
 
-    print(f"Kara Server listening on {httpPort}")
+    print(f"Kassh Server listening on {httpPort}")
     directing.runController(doers=doers, expire=expire)

@@ -1,17 +1,17 @@
 # -*- encoding: utf-8 -*-
 """
-kara.app.commands module
+kassh.app.commands module
 
 """
 import multicommand
 import logging
 
-from kara.app.cli import commands
+from kassh.app.cli import commands
 from keri import help
 
 
 help.ogler.level = logging.CRITICAL
-help.ogler.reopen(name="kara", temp=True, clear=True)
+help.ogler.reopen(name="kassh", temp=True, clear=True)
 
 
 def main():
