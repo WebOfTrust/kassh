@@ -283,7 +283,7 @@ class Authorizer(doing.DoDoer):
                     self.cdb.accts.pin(keys=(creder.said,), val=(kever.prefixer, kever.sner))
                 yield 1.0
 
-            yield 15.0
+            yield 5.0
 
     def processEscrows(self):
         """
