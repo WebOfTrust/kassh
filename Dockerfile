@@ -1,4 +1,4 @@
-FROM gleif/keri:latest
+FROM gleif/keri:1.0.0
 
 RUN apt-get update && apt-get install -y openssh-server
 
