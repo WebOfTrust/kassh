@@ -19,8 +19,18 @@ from keri.app import agenting
 from keri.core import coring
 from keri.help import helping
 
-AUTH_SCHEMA_SAID = "EKgMCHV98k4xz2rJnt2x556pGBCUfA6n5x03mvQv5tPo"
 
+class Schema:
+    AUTH_SCHEMA_SAID = "EKgMCHV98k4xz2rJnt2x556pGBCUfA6n5x03mvQv5tPo"
+    ECR_SCHEMA_SAID = "EM_FCDJGw6etiKHT7gQTFbWdq45MfwIrzbu_lyaupdhr"
+
+
+EBA_DOCUMENT_SUBMITTER_ROLE = "EBA Document Submitter"
+
+
+Banks = dict(
+    O2RNE8IBXP4R0TD8PU41="SOCIETE_GENERALE"
+)
 
 def loadHandlers(hby, cdb, exc):
     """ Load handlers for the peer-to-peer challenge response protocol
@@ -151,43 +161,99 @@ class Authorizer(doing.DoDoer):
             if self.reger.saved.get(keys=(said,)) is not None:
                 self.cdb.iss.rem(keys=(said,))
                 creder = self.reger.creds.get(keys=(said,))
-                if creder.schema != AUTH_SCHEMA_SAID:
-                    print(f"invalid credential presentation, schema {creder.schema} does not match {AUTH_SCHEMA_SAID}")
+                match creder.schema:
+                    case Schema.AUTH_SCHEMA_SAID:
+                        self.processAuth(creder)
+                    case Schema.ECR_SCHEMA_SAID:
+                        self.processEcr(creder)
+                    case _:
+                        print(f"invalid credential presentation, schema {creder.schema}")
 
-                kever = self.hby.kevers[creder.subject["i"]]
+    def processEcr(self, creder):
+        kever = self.hby.kevers[creder.subject["i"]]
 
-                user = creder.subject["userName"]
-                homeDir = os.path.join("/home", user)
-                if os.path.exists(homeDir):
-                    print(f"not creating user, {user} already exists.")
+        role = creder.subject["engagementContextRole"]
+        if role != EBA_DOCUMENT_SUBMITTER_ROLE:
+            print(f"Invalid engagement context role {role}")
+            return
 
-                cmd = f"useradd -p xxx -m {user}"
-                if (err := os.system(cmd)) != 0:
-                    print(f"unable to create user: {err}.")
+        user = creder.subject["LEI"]
 
-                try:
-                    ssh = os.path.join(homeDir, ".ssh")
-                    os.mkdir(ssh)
-                    authKeys = os.path.join(ssh, "authorized_keys")
-                    f = open(authKeys, "w")
-                    verkey = ed25519.Ed25519PublicKey.from_public_bytes(kever.verfers[0].raw)
-                    pem = verkey.public_bytes(encoding=serialization.Encoding.OpenSSH,
-                                              format=serialization.PublicFormat.OpenSSH)
+        print(f"\tValid 'EBA Document Submitter' presented by {creder.subject['personLegalName']}")
 
-                    for line in pem.splitlines(keepends=True):
-                        f.write(line.decode("utf-8"))
+        homeDir = os.path.join("/home", user)
+        if os.path.exists(homeDir):
+            print(f"not creating user, {user} already exists.")
+        else:
+            print(f"\tAccount {user} created.")
 
-                    f.close()
-                    uid, gid = pwd.getpwnam(user).pw_uid, pwd.getpwnam(user).pw_gid
-                    os.chown(ssh, uid, gid)
-                    os.chown(authKeys, uid, gid)
-                    os.chmod(ssh, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-                    os.chmod(authKeys, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+        cmd = f"useradd -p xxx -G sftp_users -m {user}"
+        if (err := os.system(cmd)) != 0:
+            print(f"unable to create user: {err}.")
 
-                    self.cdb.accts.pin(keys=(creder.said,), val=(kever.prefixer, kever.sner))
+        try:
+            ssh = os.path.join(homeDir, ".ssh")
+            os.mkdir(ssh)
+            authKeys = os.path.join(ssh, "authorized_keys")
+            f = open(authKeys, "w")
+            verkey = ed25519.Ed25519PublicKey.from_public_bytes(kever.verfers[0].raw)
+            pem = verkey.public_bytes(encoding=serialization.Encoding.OpenSSH,
+                                      format=serialization.PublicFormat.OpenSSH)
 
-                except (FileExistsError, FileNotFoundError) as e:
-                    print(f"error creating SSH directory and files: {e}")
+            for line in pem.splitlines(keepends=True):
+                f.write(line.decode("utf-8"))
+
+            f.close()
+
+            print(f"\t{creder.subject['personLegalName']} granted upload access")
+
+            uid, gid = pwd.getpwnam(user).pw_uid, pwd.getpwnam(user).pw_gid
+            os.chown(ssh, uid, gid)
+            os.chown(authKeys, uid, gid)
+            os.chmod(ssh, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            os.chmod(authKeys, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+
+            self.cdb.accts.pin(keys=(creder.said,), val=(kever.prefixer, kever.sner))
+
+        except (FileExistsError, FileNotFoundError) as e:
+            print(f"error creating SSH directory and files: {e}")
+        print()
+
+    def processAuth(self, creder):
+        kever = self.hby.kevers[creder.subject["i"]]
+
+        user = creder.subject["userName"]
+        homeDir = os.path.join("/home", user)
+        if os.path.exists(homeDir):
+            print(f"not creating user, {user} already exists.")
+
+        cmd = f"useradd -p xxx -m {user}"
+        if (err := os.system(cmd)) != 0:
+            print(f"unable to create user: {err}.")
+
+        try:
+            ssh = os.path.join(homeDir, ".ssh")
+            os.mkdir(ssh)
+            authKeys = os.path.join(ssh, "authorized_keys")
+            f = open(authKeys, "w")
+            verkey = ed25519.Ed25519PublicKey.from_public_bytes(kever.verfers[0].raw)
+            pem = verkey.public_bytes(encoding=serialization.Encoding.OpenSSH,
+                                      format=serialization.PublicFormat.OpenSSH)
+
+            for line in pem.splitlines(keepends=True):
+                f.write(line.decode("utf-8"))
+
+            f.close()
+            uid, gid = pwd.getpwnam(user).pw_uid, pwd.getpwnam(user).pw_gid
+            os.chown(ssh, uid, gid)
+            os.chown(authKeys, uid, gid)
+            os.chmod(ssh, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            os.chmod(authKeys, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+
+            self.cdb.accts.pin(keys=(creder.said,), val=(kever.prefixer, kever.sner))
+
+        except (FileExistsError, FileNotFoundError) as e:
+            print(f"error creating SSH directory and files: {e}")
 
     def processRevocations(self):
 
@@ -265,9 +331,16 @@ class Authorizer(doing.DoDoer):
 
                 kever = self.hby.kevers[prefixer.qb64]
                 if kever.sner.num > seqner.num:
-                    print("Processing rotation...")
+                    print("Identifier rotation detected")
                     creder = self.reger.creds.get(keys=(said,))
-                    user = creder.subject["userName"]
+                    match creder.schema:
+                        case Schema.AUTH_SCHEMA_SAID:
+                            user = creder.subject["userName"]
+                        case Schema.ECR_SCHEMA_SAID:
+                            user = creder.subject["LEI"]
+                        case _:
+                            continue
+
                     authKeys = os.path.join("/home", user, ".ssh", "authorized_keys")
                     f = open(authKeys, "w")
                     verkey = ed25519.Ed25519PublicKey.from_public_bytes(kever.verfers[0].raw)
@@ -278,7 +351,8 @@ class Authorizer(doing.DoDoer):
                         f.write(line.decode("utf-8"))
 
                     f.close()
-                    print(f"new key written to {authKeys}")
+                    print(f"\tAccess credentials for {creder.subject['personLegalName']} updated.")
+                    print()
 
                     self.cdb.accts.pin(keys=(creder.said,), val=(kever.prefixer, kever.sner))
                 yield 1.0
